@@ -35,6 +35,38 @@ global.string = new function() {
         var stripspace = /^\s*([\s\S]*?)\s*$/;
         return stripspace.exec(s)[1];
     };
+    
+    this.deentitize = function deentitize(s) {
+        /* convert all standard XML entities to the corresponding characters */
+        // first numbered entities
+        var numberedreg = /&#(x?)([a-f0-9]{2,});/ig;
+        while (true) {
+            var match = numberedreg.exec(s);
+            if (!match) {
+                break;
+            };
+            var value = match[2];
+            var base = 10;
+            if (match[1]) {
+                base = 16;
+            };
+            value = String.fromCharCode(parseInt(value, base));
+            s = s.replace(new RegExp(match[0], 'g'), value);
+        };
+        // and standard ones
+        s = s.replace(/&gt;/g, '>');
+        s = s.replace(/&lt;/g, '<');
+        s = s.replace(/&apos;/g, "'");
+        s = s.replace(/&quot;/g, '"');
+        s = s.replace(/&amp;/g, '&');
+        s = s.replace(/&nbsp;/g, "");
+        
+        // remove the xml declaration as E4X cannot parse it
+        s = s.replace(/^<\?xml\s+version\s*=\s*(["'])[^\1]+\1[^?]*\?>/, "");
+        
+        return s;
+    };  
+    
 
     this.encodeBase64 = function encodeBase64(input) {
     	return base64.encode(input);
@@ -355,9 +387,28 @@ global.davlib = new function() {
         };
         request.send(content);
     };
+    
+    this.DavClient.prototype.PROPFIND = function(path, handler, context, depth) {
+    	/* perform a PROPFIND request
 
-    this.DavClient.prototype.DELETE = function(path, handler, 
-                                               context, locktoken) {
+		read the metadata of a resource (optionally including its children)
+
+		'depth' - control recursion depth, default 0 (only returning the
+		properties for the resource itself)
+    	 */
+    	var request = this._getRequest('PROPFIND', path, handler, context);
+    	depth = depth || 0;
+    	request.setRequestHeader('Depth', depth);
+    	request.setRequestHeader('Content-type', 'text/xml; charset=UTF-8');
+    	// 	XXX maybe we want to change this to allow getting selected props
+    	var xml = '<?xml version="1.0" encoding="UTF-8" ?>' +
+    	'<D:propfind xmlns:D="DAV:">' +
+    	'<D:allprop />' +
+    	'</D:propfind>';
+    	request.send(xml);
+    };        
+
+    this.DavClient.prototype.DELETE = function(path, handler, context, locktoken) {
         /* perform a DELETE request 
         
             remove a resource (recursively)
@@ -383,8 +434,7 @@ global.davlib = new function() {
         request.send('');
     };
 
-    this.DavClient.prototype.COPY = function(path, topath, handler, 
-                                             context, overwrite, locktoken) {
+    this.DavClient.prototype.COPY = function(path, topath, handler, context, overwrite, locktoken) {
         /* perform a COPY request
 
             create a copy of a resource
@@ -405,8 +455,7 @@ global.davlib = new function() {
         request.send('');
     };
 
-    this.DavClient.prototype.MOVE = function(path, topath, handler, 
-                                             context, overwrite, locktoken) {
+    this.DavClient.prototype.MOVE = function(path, topath, handler, context, overwrite, locktoken) {
         /* perform a MOVE request
 
             move a resource from location
@@ -436,42 +485,34 @@ global.davlib = new function() {
         if (method == 'LOCK') {
             // LOCK requires parsing of the body on 200, so has to be treated
             // differently
-            request.onreadystatechange = this._wrapLockHandler(handler, 
-                                                            request, context);
+            request.onreadystatechange = this._wrapLockHandler(handler, request, context);
         } else {
-            request.onreadystatechange = this._wrapHandler(handler, 
-                                                            request, context);
+            request.onreadystatechange = this._wrapHandler(handler, request, context);
         };
         var url = this._generateUrl(path);
         request.open(method, url, true);
-        // refuse all encoding, since the browsers don't seem to support it...
         request.setRequestHeader('Accept-Encoding', ' ');
         request.setRequestHeader('Authorization', this._createBasicAuth(this.username, this.password));        		
         
         return request
     };
 
-    this.DavClient.prototype._wrapHandler = function(handler, request,
-                                                     context) {
+    this.DavClient.prototype._wrapHandler = function(handler, request, context) {
         /* wrap the handler with a callback
 
             The callback handles multi-status parsing and calls the client's
             handler when done
         */
         var self = this;
+        
         function HandlerWrapper() {
             this.execute = function() {
                 if (request.readyState == 4) {
                     var status = request.status.toString();
-                    var headers = self._parseHeaders(
-                                        request.getAllResponseHeaders());
+                    var headers = self._parseHeaders(request.getAllResponseHeaders());
                     var content = request.responseText;
-                    if (status == '207') {
-                        content = self._parseMultiStatus(content);
-                    };
                     var statusstring = davlib.STATUS_CODES[status];
-                    handler.call(context, status, statusstring, 
-                                    content, headers);
+                    handler.call(context, status, statusstring, content, headers);
                 };
             };
         };
@@ -489,8 +530,7 @@ global.davlib = new function() {
             this.execute = function() {
                 if (request.readyState == 4) {
                     var status = request.status.toString();
-                    var headers = self._parseHeaders(
-                                        request.getAllResponseHeaders());
+                    var headers = self._parseHeaders(request.getAllResponseHeaders());
                     var content = request.responseText;
                     if (status == '200') {
                         content = self._parseLockinfo(content);
