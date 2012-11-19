@@ -1,5 +1,5 @@
 var client = new davlib.DavClient();
-client.initialize(location.hostname, 443, 'https');
+client.initialize(location.hostname, 443, 'https', 'admin', 'diplom78');
 
 
 function writeToDiv(line, emphasize) {
@@ -38,15 +38,24 @@ function wrapContinueHandler(currname, handler, expected_status) {
         
         // multistatus request
         if (content && status == 207) {
-        	var parser = new DOMParser();
-        	var doc = parser.parseFromString(string.deentitize(content), "application/xml");
         	
+        	var parser, doc = null;
+        	if (window.DOMParser) {
+        	  parser = new DOMParser();
+        	  doc = parser.parseFromString(string.deentitize(content), "application/xml");
+       	    } else {  // Internet Explorer :-)
+       	    	doc = new ActiveXObject("Microsoft.XMLDOM");
+       	    	doc.loadXML(content);
+       	    }  
+        	       	
             writeToDiv('Files found:');
-
+            
         	// list files
         	for (i = 0; i< doc.getElementsByTagName("response").length; i++) {
-        		writeToDiv(doc.getElementsByTagName("response")[i].firstChild.textContent);
-        	}        	
+        		// property wrapper for IE (property "text") + Rest (property "textcontent")
+        		// alternative: use jquery for wrapping
+        		writeToDiv(doc.getElementsByTagName("response")[i].firstChild.textContent || doc.getElementsByTagName("response")[i].firstChild.text);
+        	}       
         };
         
         writeToDiv('Expected status: ' + expected_status);

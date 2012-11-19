@@ -1,7 +1,7 @@
 /*
     davclient.js - Low-level JavaScript WebDAV client implementation
     
-    Supports following methods: MKCOL, MOVE, GET, DELETE, COPY, PUT
+    Supports following methods: MKCOL, MOVE, GET, DELETE, COPY, PUT, PROPFIND
 
     Copyright (C) Sven vogler
     email s.vogler@gmx.de
@@ -136,12 +136,8 @@ global.string = new function() {
     		    }
 
     		    return utftext;
-    		}
-
-    		
-    	}        
-    
-    
+    		}    		
+    	}                
 };
 
 global.davlib = new function() {
@@ -195,10 +191,6 @@ global.davlib = new function() {
         '202': 'Accepted',
         '203': 'None-Authoritive Information',
         '204': 'No Content',
-        // seems that there's some bug in IE (or Sarissa?) that 
-        // makes it spew out '1223' status codes when '204' is
-        // received... needs some investigation later on
-        '1223': 'No Content',
         '205': 'Reset Content',
         '206': 'Partial Content',
         '207': 'Multi-Status',
@@ -482,13 +474,8 @@ global.davlib = new function() {
                                                     handler, context) {
         /* prepare a request */
         var request = davlib.getXmlHttpRequest();
-        if (method == 'LOCK') {
-            // LOCK requires parsing of the body on 200, so has to be treated
-            // differently
-            request.onreadystatechange = this._wrapLockHandler(handler, request, context);
-        } else {
-            request.onreadystatechange = this._wrapHandler(handler, request, context);
-        };
+        request.onreadystatechange = this._wrapHandler(handler, request, context);
+
         var url = this._generateUrl(path);
         request.open(method, url, true);
         request.setRequestHeader('Accept-Encoding', ' ');
@@ -519,32 +506,6 @@ global.davlib = new function() {
         return (new HandlerWrapper().execute);
     };
 
-    this.DavClient.prototype._wrapLockHandler = function(handler, request, 
-                                                         context) {
-        /* wrap the handler for a LOCK response
-
-            The callback handles parsing of specific XML for LOCK requests
-        */
-        var self = this;
-        function HandlerWrapper() {
-            this.execute = function() {
-                if (request.readyState == 4) {
-                    var status = request.status.toString();
-                    var headers = self._parseHeaders(request.getAllResponseHeaders());
-                    var content = request.responseText;
-                    if (status == '200') {
-                        content = self._parseLockinfo(content);
-                    } else if (status == '207') {
-                        content = self._parseMultiStatus(content);
-                    };
-                    var statusstring = davlib.STATUS_CODES[status];
-                    handler.call(context, status, statusstring, 
-                                 content, headers);
-                };
-            };
-        };
-        return (new HandlerWrapper().execute);
-    };
 
     this.DavClient.prototype._generateUrl = function(path){
         /* convert a url from a path */
