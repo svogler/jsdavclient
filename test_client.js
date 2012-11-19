@@ -1,5 +1,5 @@
 var client = new davlib.DavClient();
-client.initialize(location.hostname, 443, 'https', 'admin', 'diplom78');
+client.initialize(location.hostname, 443, 'https', 'user', 'password');
 
 
 function writeToDiv(line, emphasize) {
